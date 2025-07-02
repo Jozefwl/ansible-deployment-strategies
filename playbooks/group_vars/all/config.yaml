@@ -1,0 +1,34 @@
+namespace: apps
+storage_class: "opt-storage"
+
+# deployment strategies config
+canary_percentage: 10
+ab_test_percentage: 20
+canary_user_ips: []
+shadow_replicas: 1
+replicas: 2
+app_host: "{{ hostvars[TARGET_NODE]['ansible_host'] }}"
+
+# nextcloud config
+# --------------------------------------------------------------
+nextcloud_app_name: "nextcloud"
+nextcloud_service_name: "nextcloud-service"
+nextcloud_trusted_domains: "cloud.waldhauser.sk"
+nextcloud_url: "https://cloud.waldhauser.sk"
+nextcloud_image: "nextcloud:stable-fpm"
+# storage
+nextcloud_data_storage_size: "50Gi"
+nextcloud_folder: "/opt/nextcloud-storage"
+# admin credentials
+nextcloud_admin_user: "admin"
+nextcloud_admin_password: "password12345678"
+# --------------------------------------------------------------
+
+
+# postgre config
+postgresql_connection:
+  host: "postgresql-service"
+  port: 5432
+  database: "nextcloud"
+  username: "postgres"
+  password: "adminpassword"
