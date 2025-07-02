@@ -1,0 +1,48 @@
+# --------------------------------------------
+# DNS RESOLUTION
+# --------------------------------------------
+
+dns_network_policy:
+  apiVersion: networking.k8s.io/v1
+  kind: NetworkPolicy
+  metadata:
+    name: allow-dns
+    namespace: apps
+  spec:
+    podSelector: {}
+    policyTypes:
+    - Egress
+    egress:
+    - to:
+      - namespaceSelector:
+          matchLabels:
+            kubernetes.io/metadata.name: kube-system
+        podSelector:
+          matchLabels:
+            k8s-app: kube-dns
+      ports:
+      - protocol: UDP
+        port: 53
+      - protocol: TCP
+        port: 53
+
+# --------------------------------------------
+# STORAGE CLASS OPT STORAGE
+# --------------------------------------------
+
+opt_storage_class:
+  apiVersion: storage.k8s.io/v1
+  kind: StorageClass
+  metadata:
+    name: "{{ storage_class }}"
+    annotations:
+      storageclass.kubernetes.io/is-default-class: "false"
+    labels:
+      type: local
+      location: opt
+  provisioner: hostpath.csi.k8s.io
+  volumeBindingMode: WaitForFirstConsumer
+  allowVolumeExpansion: true
+  reclaimPolicy: Retain
+  parameters:
+    type: "local"

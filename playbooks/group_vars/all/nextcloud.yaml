@@ -1,0 +1,376 @@
+# ------------------------------------------------------------
+# DEPLOYMENT STRATEGIES
+# ------------------------------------------------------------
+
+# ------------------------------------------------------------
+# BLUE GREEN DEPLOYMENT STRATEGY
+# ------------------------------------------------------------
+nextcloud_bluegreen_deployment:
+  apiVersion: apps/v1
+  kind: Deployment
+  metadata:
+    name: "{{ nextcloud_app_name }}-{{ target_nextcloud_env }}"
+    namespace: "{{ namespace }}"
+    labels:
+      app: "{{ nextcloud_app_name }}"
+      env: "{{ target_nextcloud_env }}"
+  spec:
+    replicas: "{{ replicas }}"
+    selector:
+      matchLabels:
+        app: "{{ nextcloud_app_name }}"
+        env: "{{ target_nextcloud_env }}"
+    template:
+      metadata:
+        labels:
+          app: "{{ nextcloud_app_name }}"
+          env: "{{ target_nextcloud_env }}"
+      spec:
+        containers:
+        - name: nextcloud-app
+          image: "{{ nextcloud_image }}"
+          ports:
+          - containerPort: 80
+            name: http
+          env:
+          # Nextcloud Admin Configuration
+          - name: NEXTCLOUD_ADMIN_USER
+            valueFrom:
+              secretKeyRef:
+                name: "{{ nextcloud_secret_name | default('nextcloud-secret') }}"
+                key: NEXTCLOUD_ADMIN_USER
+          - name: NEXTCLOUD_ADMIN_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: "{{ nextcloud_secret_name | default('nextcloud-secret') }}"
+                key: NEXTCLOUD_ADMIN_PASSWORD
+          
+          # Nextcloud specific settings
+          - name: NEXTCLOUD_TRUSTED_DOMAINS
+            value: "{{ nextcloud_trusted_domains | default('localhost') }}"
+          - name: OVERWRITEPROTOCOL
+            value: "{{ nextcloud_protocol | default('https') }}"
+          - name: OVERWRITEHOST
+            value: "{{ nextcloud_host | default('localhost') }}"
+          - name: OVERWRITECLIURL
+            value: "{{ nextcloud_protocol | default('https') }}://{{ nextcloud_host | default('localhost') }}"
+          
+          # PHP Configuration for better performance
+          - name: PHP_MEMORY_LIMIT
+            value: "{{ nextcloud_php_memory_limit | default('512M') }}"
+          - name: PHP_UPLOAD_LIMIT
+            value: "{{ nextcloud_php_upload_limit | default('10G') }}"
+          
+          # SQLite database (default for Nextcloud)
+          - name: SQLITE_DATABASE
+            value: "nextcloud"
+          
+          volumeMounts:
+          - name: nextcloud-data
+            mountPath: /var/www/html
+            
+          readinessProbe:
+            httpGet:
+              path: /status.php
+              port: 80
+            initialDelaySeconds: 60
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /status.php
+              port: 80
+            initialDelaySeconds: 120
+            periodSeconds: 30
+            timeoutSeconds: 5
+            
+          resources:
+            requests:
+              memory: "{{ nextcloud_memory_request | default('256Mi') }}"
+              cpu: "{{ nextcloud_cpu_request | default('100m') }}"
+            limits:
+              memory: "{{ nextcloud_memory_limit | default('1Gi') }}"
+              cpu: "{{ nextcloud_cpu_limit | default('500m') }}"
+              
+        volumes:
+        - name: nextcloud-data
+          persistentVolumeClaim:
+            claimName: "{{ nextcloud_pvc_name | default('nextcloud-data-pvc') }}"
+
+# ------------------------------------------------------------
+# ROLLING DEPLOYMENT STRATEGY
+# ------------------------------------------------------------
+
+nextcloud_rolling_deployment:
+  apiVersion: apps/v1
+  kind: Deployment
+  metadata:
+    name: "{{ nextcloud_app_name }}"
+    namespace: "{{ namespace }}"
+    labels:
+      app: "{{ nextcloud_app_name }}"
+  spec:
+    replicas: "{{ replicas }}"
+    strategy:
+      type: RollingUpdate
+      rollingUpdate:
+        maxUnavailable: 1
+        maxSurge: 1
+    selector:
+      matchLabels:
+        app: "{{ nextcloud_app_name }}"
+    template:
+      metadata:
+        labels:
+          app: "{{ nextcloud_app_name }}"
+      spec:
+        containers:
+        - name: nextcloud-app
+          image: "{{ nextcloud_image }}"
+          ports:
+          - containerPort: 80
+            name: http
+          env:
+          # Nextcloud Admin Configuration
+          - name: NEXTCLOUD_ADMIN_USER
+            valueFrom:
+              secretKeyRef:
+                name: "{{ nextcloud_secret_name | default('nextcloud-secret') }}"
+                key: NEXTCLOUD_ADMIN_USER
+          - name: NEXTCLOUD_ADMIN_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: "{{ nextcloud_secret_name | default('nextcloud-secret') }}"
+                key: NEXTCLOUD_ADMIN_PASSWORD
+
+          # Nextcloud specific settings
+          - name: NEXTCLOUD_TRUSTED_DOMAINS
+            value: "{{ nextcloud_trusted_domains | default('localhost') }}"
+          - name: OVERWRITEPROTOCOL
+            value: "{{ nextcloud_protocol | default('https') }}"
+          - name: OVERWRITEHOST
+            value: "{{ nextcloud_host | default('localhost') }}"
+          - name: OVERWRITECLIURL
+            value: "{{ nextcloud_protocol | default('https') }}://{{ nextcloud_host | default('localhost') }}"
+
+          # PHP Configuration for better performance
+          - name: PHP_MEMORY_LIMIT
+            value: "{{ nextcloud_php_memory_limit | default('512M') }}"
+          - name: PHP_UPLOAD_LIMIT
+            value: "{{ nextcloud_php_upload_limit | default('10G') }}"
+
+          # SQLite database (default for Nextcloud)
+          - name: SQLITE_DATABASE
+            value: "nextcloud"
+
+          volumeMounts:
+          - name: nextcloud-data
+            mountPath: /var/www/html
+
+          readinessProbe:
+            httpGet:
+              path: /status.php
+              port: 80
+            initialDelaySeconds: 60
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /status.php
+              port: 80
+            initialDelaySeconds: 120
+            periodSeconds: 30
+            timeoutSeconds: 5
+
+          resources:
+            requests:
+              memory: "{{ nextcloud_memory_request | default('256Mi') }}"
+              cpu: "{{ nextcloud_cpu_request | default('100m') }}"
+            limits:
+              memory: "{{ nextcloud_memory_limit | default('1Gi') }}"
+              cpu: "{{ nextcloud_cpu_limit | default('500m') }}"
+
+        volumes:
+        - name: nextcloud-data
+          persistentVolumeClaim:
+            claimName: "{{ nextcloud_pvc_name | default('nextcloud-data-pvc') }}"
+
+# ------------------------------------------------------------
+# RECREATE DEPLOYMENT STRATEGY
+# ------------------------------------------------------------
+
+nextcloud_recreate_deployment:
+  apiVersion: apps/v1
+  kind: Deployment
+  metadata:
+    name: "{{ nextcloud_app_name }}"
+    namespace: "{{ namespace }}"
+    labels:
+      app: "{{ nextcloud_app_name }}"
+  spec:
+    replicas: "{{ replicas }}"
+    strategy:
+      type: Recreate
+    selector:
+      matchLabels:
+        app: "{{ nextcloud_app_name }}"
+    template:
+      metadata:
+        labels:
+          app: "{{ nextcloud_app_name }}"
+      spec:
+        containers:
+        - name: nextcloud-app
+          image: "{{ nextcloud_image }}"
+          ports:
+          - containerPort: 80
+            name: http
+          env:
+          # Nextcloud Admin Configuration
+          - name: NEXTCLOUD_ADMIN_USER
+            valueFrom:
+              secretKeyRef:
+                name: "{{ nextcloud_secret_name | default('nextcloud-secret') }}"
+                key: NEXTCLOUD_ADMIN_USER
+          - name: NEXTCLOUD_ADMIN_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: "{{ nextcloud_secret_name | default('nextcloud-secret') }}"
+                key: NEXTCLOUD_ADMIN_PASSWORD
+
+          # Nextcloud specific settings
+          - name: NEXTCLOUD_TRUSTED_DOMAINS
+            value: "{{ nextcloud_trusted_domains | default('localhost') }}"
+          - name: OVERWRITEPROTOCOL
+            value: "{{ nextcloud_protocol | default('https') }}"
+          - name: OVERWRITEHOST
+            value: "{{ nextcloud_host | default('localhost') }}"
+          - name: OVERWRITECLIURL
+            value: "{{ nextcloud_protocol | default('https') }}://{{ nextcloud_host | default('localhost') }}"
+
+          # PHP Configuration for better performance
+          - name: PHP_MEMORY_LIMIT
+            value: "{{ nextcloud_php_memory_limit | default('512M') }}"
+          - name: PHP_UPLOAD_LIMIT
+            value: "{{ nextcloud_php_upload_limit | default('10G') }}"
+
+          # SQLite database (default for Nextcloud)
+          - name: SQLITE_DATABASE
+            value: "nextcloud"
+
+          volumeMounts:
+          - name: nextcloud-data
+            mountPath: /var/www/html
+
+          readinessProbe:
+            httpGet:
+              path: /status.php
+              port: 80
+            initialDelaySeconds: 60
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /status.php
+              port: 80
+            initialDelaySeconds: 120
+            periodSeconds: 30
+            timeoutSeconds: 5
+
+          resources:
+            requests:
+              memory: "{{ nextcloud_memory_request | default('256Mi') }}"
+              cpu: "{{ nextcloud_cpu_request | default('100m') }}"
+            limits:
+              memory: "{{ nextcloud_memory_limit | default('1Gi') }}"
+              cpu: "{{ nextcloud_cpu_limit | default('500m') }}"
+
+        volumes:
+        - name: nextcloud-data
+          persistentVolumeClaim:
+            claimName: "{{ nextcloud_pvc_name | default('nextcloud-data-pvc') }}"
+
+
+# ------------------------------------------------------------
+# PERSISTENT VOLUME CLAIM
+# ------------------------------------------------------------
+
+nextcloud_data_pvc:
+  apiVersion: v1
+  kind: PersistentVolumeClaim
+  metadata:
+    name: "{{ nextcloud_pvc_name | default('nextcloud-data-pvc') }}"
+    namespace: "{{ namespace }}"
+  spec:
+    accessModes:
+      - ReadWriteOnce
+    resources:
+      requests:
+        storage: "{{ nextcloud_storage_size | default('10Gi') }}"
+    storageClassName: "{{ storage_class }}"
+
+
+# ------------------------------------------------------------
+# SECRET
+# ------------------------------------------------------------
+
+nextcloud_secret:
+  apiVersion: v1
+  kind: Secret
+  metadata:
+    name: "{{ nextcloud_secret_name | default('nextcloud-secret') }}"
+    namespace: "{{ namespace }}"
+  type: Opaque
+  data:
+    NEXTCLOUD_ADMIN_USER: "{{ nextcloud_admin_user | b64encode }}"
+    NEXTCLOUD_ADMIN_PASSWORD: "{{ nextcloud_admin_password | b64encode }}"
+
+# ------------------------------------------------------------
+# CLUSTERIP SERVICE
+# ------------------------------------------------------------
+
+nextcloud_service:
+  apiVersion: v1
+  kind: Service
+  metadata:
+    name: "{{ nextcloud_service_name | default(nextcloud_app_name + '-service') }}"
+    namespace: "{{ namespace }}"
+    labels:
+      app: "{{ nextcloud_app_name }}"
+  spec:
+    selector:
+      app: "{{ nextcloud_app_name }}"
+    ports:
+      - port: 80
+        targetPort: 80
+        name: http
+    type: ClusterIP
+
+# ------------------------------------------------------------
+# INGRESS
+# ------------------------------------------------------------
+
+nextcloud_ingress:
+  apiVersion: networking.k8s.io/v1
+  kind: Ingress
+  metadata:
+    name: "{{ nextcloud_ingress_name | default('nextcloud-ingress') }}"
+    namespace: "{{ namespace }}"
+    annotations:
+      kubernetes.io/ingress.class: "nginx"
+      nginx.ingress.kubernetes.io/ssl-redirect: "{{ nextcloud_ssl_redirect | default('false') }}"
+      nginx.ingress.kubernetes.io/proxy-body-size: "{{ nextcloud_proxy_body_size | default('10G') }}"
+      nginx.ingress.kubernetes.io/proxy-buffering: "off"
+      nginx.ingress.kubernetes.io/proxy-request-buffering: "off"
+  spec:
+    rules:
+    - host: "{{ nextcloud_host | default('localhost') }}"
+      http:
+        paths:
+        - path: /
+          pathType: Prefix
+          backend:
+            service:
+              name: "{{ nextcloud_service_name | default(nextcloud_app_name + '-service') }}"
+              port: 
+                number: 80

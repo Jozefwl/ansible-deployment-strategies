@@ -1,0 +1,73 @@
+- name: Apply Nextcloud Rolling Deployment
+  kubernetes.core.k8s:
+    definition: "{{ nextcloud_rolling_deployment }}"
+    state: present
+    kubeconfig: "{{ rancher_kubeconfig }}"
+    wait: true
+    wait_condition:
+      type: Progressing
+      status: "True"
+      reason: NewReplicaSetAvailable
+    wait_timeout: 600
+
+- name: Wait for Nextcloud pods to be ready
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Pod
+    namespace: "{{ namespace }}"
+    label_selectors:
+      - "app={{ nextcloud_app_name }}"
+    kubeconfig: "{{ rancher_kubeconfig }}"
+  register: nextcloud_pods
+  until: nextcloud_pods.resources | selectattr('status.phase', 'equalto', 'Running') | list | length == replicas
+  retries: 30
+  delay: 10
+
+- name: Apply Nextcloud Service
+  kubernetes.core.k8s:
+    definition: "{{ nextcloud_service }}"
+    state: present
+    kubeconfig: "{{ rancher_kubeconfig }}"
+    wait: true
+    wait_timeout: 300
+
+- name: Apply Nextcloud Ingress
+  kubernetes.core.k8s:
+    definition: "{{ nextcloud_ingress }}"
+    state: present
+    kubeconfig: "{{ rancher_kubeconfig }}"
+    wait: true
+    wait_timeout: 300
+
+- name: Apply Nextcloud Network Policy
+  kubernetes.core.k8s:
+    definition: "{{ nextcloud_egress_policy }}"
+    state: present
+    kubeconfig: "{{ rancher_kubeconfig }}"
+    wait: true
+    wait_timeout: 300
+
+- name: Verify Rolling Deployment Status
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: Deployment
+    name: "{{ nextcloud_app_name }}"
+    namespace: "{{ namespace }}"
+    kubeconfig: "{{ rancher_kubeconfig }}"
+  register: deployment_status
+
+- name: Display Rolling Deployment Status
+  ansible.builtin.debug:
+    msg: |
+      Rolling Deployment Status:
+      - Name: {{ deployment_status.resources[0].metadata.name }}
+      - Replicas: {{ deployment_status.resources[0].spec.replicas }}
+      - Ready Replicas: {{ deployment_status.resources[0].status.readyReplicas | default(0) }}
+      - Available Replicas: {{ deployment_status.resources[0].status.availableReplicas | default(0) }}
+      - Strategy: {{ deployment_status.resources[0].spec.strategy.type }}
+      - Max Unavailable: {{ deployment_status.resources[0].spec.strategy.rollingUpdate.maxUnavailable }}
+      - Max Surge: {{ deployment_status.resources[0].spec.strategy.rollingUpdate.maxSurge }}
+
+- name: Rolling Deployment Complete
+  ansible.builtin.debug:
+    msg: "Nextcloud Rolling Deployment completed successfully!"

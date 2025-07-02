@@ -1,34 +1,105 @@
+# --------------------------------------------------------------
+# Common
+# --------------------------------------------------------------
 namespace: apps
 storage_class: "opt-storage"
+rancher_kubeconfig: "/etc/rancher/rke2/rke2.yaml"
+# --------------------------------------------------------------
 
+
+# --------------------------------------------------------------
 # deployment strategies config
+# --------------------------------------------------------------
 canary_percentage: 10
 ab_test_percentage: 20
 canary_user_ips: []
 shadow_replicas: 1
 replicas: 2
 app_host: "{{ hostvars[TARGET_NODE]['ansible_host'] }}"
+# --------------------------------------------------------------
 
+
+
+# --------------------------------------------------------------
 # nextcloud config
 # --------------------------------------------------------------
 nextcloud_app_name: "nextcloud"
+nextcloud_image: "nextcloud:latest"
+nextcloud_secret_name: "nextcloud-secret"
 nextcloud_service_name: "nextcloud-service"
-nextcloud_trusted_domains: "cloud.waldhauser.sk"
+nextcloud_pvc_name: "nextcloud-data-pvc"
+nextcloud_ingress_name: "nextcloud-ingress"
+nextcloud_trusted_domains: "cloud.waldhauser.sk localhost"
 nextcloud_url: "https://cloud.waldhauser.sk"
-nextcloud_image: "nextcloud:stable-fpm"
-# storage
-nextcloud_data_storage_size: "50Gi"
-nextcloud_folder: "/opt/nextcloud-storage"
+nextcloud_protocol: "https"
+nextcloud_host: "cloud.waldhauser.sk"
+
 # admin credentials
 nextcloud_admin_user: "admin"
-nextcloud_admin_password: "password12345678"
+nextcloud_admin_password: "your_secure_admin_password"
+
+# resources
+nextcloud_cpu_request: "128m"
+nextcloud_memory_request: "256Mi"
+nextcloud_cpu_limit: "512m"
+nextcloud_memory_limit: "1Gi"
+
+# PHP configuration
+nextcloud_php_memory_limit: "512M"
+nextcloud_php_upload_limit: "10G"
+
+# storage
+nextcloud_storage_size: "50Gi"
+nextcloud_folder: "/opt/nextcloud-storage"
+
+# Ingress configuration
+nextcloud_ssl_redirect: "false"
+nextcloud_proxy_body_size: "10G"
+
+# PHP configuration
+php_memory_limit: "512M"
+php_upload_limit: "10G"
+
+# Resource Limits
+memory_request: "256Mi"
+cpu_request: "100m"
+memory_limit: "1Gi"
+cpu_limit: "500m"
+
+# Ingress configuration
+ssl_redirect: "false"
+proxy_body_size: "10G"
 # --------------------------------------------------------------
 
 
+
+# --------------------------------------------------------------
 # postgre config
+# --------------------------------------------------------------
+postgresql_app_name: "postgresql"
+postgresql_image: "postgres:15-alpine"
+postgresql_secret_name: "postgresql-secret"
+postgresql_service_name: "postgresql-service"
+postgresql_pv_name: "postgresql-data-pv"
+postgresql_pvc_name: "postgresql-data-pvc"
+postgresql_configmap_name: "postgresql-config"
+postgresql_ingress_policy_name: "postgresql-ingress-policy"
+
+# Storage Configuration
+postgresql_storage_size: "100Gi"
+postgresql_data_folder: "/data/postgresql"
+pv_reclaim_policy: "Retain"
+
+# Resource Limits
+postgre_mem_request: "256Mi"
+postgre_cpu_request: "100m"
+postgre_mem_limit: "1Gi"
+postgre_cpu_limit: "500m"
+
 postgresql_connection:
   host: "postgresql-service"
   port: 5432
   database: "nextcloud"
   username: "postgres"
   password: "adminpassword"
+# --------------------------------------------------------------

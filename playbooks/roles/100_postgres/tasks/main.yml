@@ -1,0 +1,98 @@
+---
+- name: Apply PostgreSQL Namespace
+  kubernetes.core.k8s:
+    name: "{{ namespace }}"
+    kubeconfig: "{{ rancher_kubeconfig }}"
+    api_version: v1
+    kind: Namespace
+    state: present
+    wait: true
+    wait_timeout: 60
+
+- name: Apply PostgreSQL Secret
+  kubernetes.core.k8s:
+    definition: "{{ postgresql_secret }}"
+    kubeconfig: "{{ rancher_kubeconfig }}"
+    state: present
+    wait: true
+    wait_timeout: 60
+
+- name: Apply PostgreSQL ConfigMap
+  kubernetes.core.k8s:
+    definition: "{{ postgresql_configmap }}"
+    kubeconfig: "{{ rancher_kubeconfig }}"
+    state: present
+    wait: true
+    wait_timeout: 60
+
+- name: Apply PostgreSQL Persistent Volume
+  kubernetes.core.k8s:
+    definition: "{{ postgresql_data_pv }}"
+    kubeconfig: "{{ rancher_kubeconfig }}"
+    state: present
+    wait: true
+    wait_timeout: 60
+
+- name: Apply PostgreSQL Persistent Volume Claim
+  kubernetes.core.k8s:
+    definition: "{{ postgresql_data_pvc }}"
+    kubeconfig: "{{ rancher_kubeconfig }}"
+    state: present
+    wait: true
+    wait_timeout: 60
+
+- name: Apply PostgreSQL Deployment
+  kubernetes.core.k8s:
+    definition: "{{ postgresql_deployment }}"
+    kubeconfig: "{{ rancher_kubeconfig }}"
+    state: present
+    wait: true
+    wait_condition:
+      type: Available
+      status: "True"
+    wait_timeout: 300
+
+- name: Apply PostgreSQL Service
+  kubernetes.core.k8s:
+    definition: "{{ postgresql_service }}"
+    kubeconfig: "{{ rancher_kubeconfig }}"
+    state: present
+    wait: true
+    wait_timeout: 60
+
+- name: Apply PostgreSQL Network Policy
+  kubernetes.core.k8s:
+    definition: "{{ postgresql_ingress_policy }}"
+    kubeconfig: "{{ rancher_kubeconfig }}"
+    state: present
+    wait: true
+    wait_timeout: 60
+
+- name: Wait for PostgreSQL to be ready
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: Deployment
+    name: "{{ postgresql_app_name | default('postgresql') }}"
+    kubeconfig: "{{ rancher_kubeconfig }}"
+    namespace: "{{ namespace }}"
+    wait_condition:
+      type: Available
+      status: "True"
+    wait_timeout: 300
+
+- name: Verify PostgreSQL pod is running
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Pod
+    kubeconfig: "{{ rancher_kubeconfig }}"
+    namespace: "{{ namespace }}"
+    label_selectors:
+      - app={{ postgresql_app_name | default('postgresql') }}
+    wait_condition:
+      type: Ready
+      status: "True"
+    wait_timeout: 300
+
+- name: Display PostgreSQL deployment status
+  debug:
+    msg: "PostgreSQL deployment completed successfully in namespace {{ namespace }}"

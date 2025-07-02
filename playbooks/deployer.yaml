@@ -1,0 +1,29 @@
+---
+- name: Check prerequisites
+  hosts: localhost
+  become: true
+  roles:
+    - role: 01_local_prerequisites
+      tags: always
+
+- name: Check server prerequisites
+  hosts: "{{ TARGET_NODE }}"
+  become: true
+  roles: 
+    - role: 02_server_prerequisites
+      tags: always
+
+- name: Check if kubeconfig exists
+  ansible.builtin.stat:
+    path: /etc/rancher/rke2/rke2.yaml
+  register: kubeconfig_check
+
+- name: Throw error if kubeconfig doesn't exist
+  ansible.builtin.fail:
+    msg: "Kubeconfig not found at /etc/rancher/rke2/rke2.yaml"
+  when: not kubeconfig_check.stat.exists
+
+- name: Set kubeconfig environment variable
+  ansible.builtin.set_fact:
+    rancher_kubeconfig: "/etc/rancher/rke2/rke2.yaml"
+

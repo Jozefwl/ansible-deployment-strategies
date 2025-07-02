@@ -1,0 +1,21 @@
+- name: Apply namespace
+  kubernetes.core.k8s:
+    name: "{{ namespace }}"
+    api_version: v1
+    kind: Namespace
+    state: present
+    kubeconfig: "{{ rancher_kubeconfig }}"
+
+- name: Apply Nextcloud Secret
+  kubernetes.core.k8s:
+    definition: "{{ nextcloud_secret }}"
+    state: present
+    kubeconfig: "{{ rancher_kubeconfig }}"
+
+- name: Apply Nextcloud Persistent Volume Claim
+  kubernetes.core.k8s:
+    definition: "{{ nextcloud_data_pvc }}"
+    state: present
+    kubeconfig: "{{ rancher_kubeconfig }}"
+
+

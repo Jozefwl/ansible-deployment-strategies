@@ -1,0 +1,13 @@
+- name: Apply DNS resoluton NetworkConfig
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ rancher_kubeconfig }}"
+    definition: "{{ dns_network_policy }}"
+  register: dns_network_policy
+
+- name: Apply StorageClass "{{ storage_class }}"
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ rancher_kubeconfig }}"
+    definition: "{{ opt_storage_class }}"
+  register: opt_storage_class

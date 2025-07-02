@@ -1,0 +1,248 @@
+# ------------------------------------------------------------
+# POSTGRESQL DEPLOYMENT
+# ------------------------------------------------------------
+postgresql_deployment:
+  apiVersion: apps/v1
+  kind: Deployment
+  metadata:
+    name: "{{ postgresql_app_name | default('postgresql') }}"
+    namespace: "{{ namespace }}"
+    labels:
+      app: "{{ postgresql_app_name | default('postgresql') }}"
+      tier: database
+  spec:
+    replicas: 1
+    strategy:
+      type: Recreate
+    selector:
+      matchLabels:
+        app: "{{ postgresql_app_name | default('postgresql') }}"
+    template:
+      metadata:
+        labels:
+          app: "{{ postgresql_app_name | default('postgresql') }}"
+          tier: database
+      spec:
+        containers:
+        - name: postgresql
+          image: "{{ postgresql_image | default('postgres:15-alpine') }}"
+          ports:
+          - containerPort: 5432
+            name: postgresql
+          env:
+          - name: POSTGRES_DB
+            valueFrom:
+              secretKeyRef:
+                name: "{{ postgresql_secret_name | default('postgresql-secret') }}"
+                key: POSTGRES_DB
+          - name: POSTGRES_USER
+            valueFrom:
+              secretKeyRef:
+                name: "{{ postgresql_secret_name | default('postgresql-secret') }}"
+                key: POSTGRES_USER
+          - name: POSTGRES_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: "{{ postgresql_secret_name | default('postgresql-secret') }}"
+                key: POSTGRES_PASSWORD
+          - name: PGDATA
+            value: /var/lib/postgresql/data/pgdata
+          
+          volumeMounts:
+          - name: postgresql-data
+            mountPath: /var/lib/postgresql/data
+            
+          readinessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - "pg_isready -U $POSTGRES_USER -d $POSTGRES_DB"
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - "pg_isready -U $POSTGRES_USER -d $POSTGRES_DB"
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            timeoutSeconds: 5
+            
+            
+          resources:
+            requests:
+              memory: "{{ postgre_mem_request | default('256Mi') }}"
+              cpu: "{{ postgre_cpu_request | default('100m') }}"
+            limits:
+              memory: "{{ postgre_mem_limit | default('1Gi') }}"
+              cpu: "{{ postgre_cpu_limit | default('500m') }}"
+              
+        volumes:
+        - name: postgresql-data
+          persistentVolumeClaim:
+            claimName: "{{ postgresql_pvc_name | default('postgresql-data-pvc') }}"
+
+# ------------------------------------------------------------
+# PERSISTENT VOLUME
+# ------------------------------------------------------------
+
+postgresql_data_pv:
+  apiVersion: v1
+  kind: PersistentVolume
+  metadata:
+    name: "{{ postgresql_pv_name | default('postgresql-data-pv') }}"
+  spec:
+    capacity:
+      storage: "{{ postgresql_storage_size | default('10Gi') }}"
+    accessModes:
+      - ReadWriteOnce
+    persistentVolumeReclaimPolicy: "{{ pv_reclaim_policy | default('Retain') }}"
+    storageClassName: "{{ storage_class }}"
+    hostPath:
+      path: "{{ postgresql_data_folder }}"
+      type: DirectoryOrCreate
+    nodeAffinity:
+      required:
+        nodeSelectorTerms:
+        - matchExpressions:
+          - key: kubernetes.io/hostname
+            operator: In
+            values:
+            - "{{ TARGET_NODE }}"
+
+# ------------------------------------------------------------
+# PERSISTENT VOLUME CLAIM
+# ------------------------------------------------------------
+
+postgresql_data_pvc:
+  apiVersion: v1
+  kind: PersistentVolumeClaim
+  metadata:
+    name: "{{ postgresql_pvc_name | default('postgresql-data-pvc') }}"
+    namespace: "{{ namespace }}"
+  spec:
+    accessModes:
+      - ReadWriteOnce
+    resources:
+      requests:
+        storage: "{{ postgresql_storage_size | default('10Gi') }}"
+    storageClassName: "{{ storage_class }}"
+
+# ------------------------------------------------------------
+# SECRET
+# ------------------------------------------------------------
+
+postgresql_secret:
+  apiVersion: v1
+  kind: Secret
+  metadata:
+    name: "{{ postgresql_secret_name | default('postgresql-secret') }}"
+    namespace: "{{ namespace }}"
+  type: Opaque
+  data:
+    POSTGRES_DB: "{{ postgresql_connection.database | b64encode }}"
+    POSTGRES_USER: "{{ postgresql_connection.username | b64encode }}"
+    POSTGRES_PASSWORD: "{{ postgresql_connection.password | b64encode }}"
+
+# ------------------------------------------------------------
+# CLUSTERIP SERVICE
+# ------------------------------------------------------------
+
+postgresql_service:
+  apiVersion: v1
+  kind: Service
+  metadata:
+    name: "{{ postgresql_service_name | default('postgresql-service') }}"
+    namespace: "{{ namespace }}"
+    labels:
+      app: "{{ postgresql_app_name | default('postgresql') }}"
+      tier: database
+  spec:
+    selector:
+      app: "{{ postgresql_app_name | default('postgresql') }}"
+    ports:
+      - port: 5432
+        targetPort: 5432
+        name: postgresql
+    type: ClusterIP
+
+# ------------------------------------------------------------
+# POSTGRESQL INGRESS POLICY
+# ------------------------------------------------------------
+
+postgresql_ingress_policy:
+  apiVersion: networking.k8s.io/v1
+  kind: NetworkPolicy
+  metadata:
+    name: "{{ postgresql_ingress_policy_name | default('postgresql-ingress-policy') }}"
+    namespace: "{{ namespace }}"
+  spec:
+    podSelector:
+      matchLabels:
+        app: "{{ postgresql_app_name | default('postgresql') }}"
+    policyTypes:
+    - Ingress
+    ingress:
+    - from:
+      - podSelector:
+          matchLabels:
+            app: "{{ nextcloud_app_name }}"
+      ports:
+      - protocol: TCP
+        port: 5432
+    # Allow connections from monitoring/backup pods if needed
+    - from:
+      - podSelector:
+          matchLabels:
+            tier: monitoring
+      ports:
+      - protocol: TCP
+        port: 5432
+
+# ------------------------------------------------------------
+# CONFIGMAP FOR POSTGRESQL CONFIGURATION
+# ------------------------------------------------------------
+
+postgresql_configmap:
+  apiVersion: v1
+  kind: ConfigMap
+  metadata:
+    name: "{{ postgresql_configmap_name | default('postgresql-config') }}"
+    namespace: "{{ namespace }}"
+  data:
+    postgresql.conf: |
+      # PostgreSQL configuration
+      max_connections = {{ postgresql_max_connections | default('100') }}
+      shared_buffers = {{ postgresql_shared_buffers | default('128MB') }}
+      effective_cache_size = {{ postgresql_effective_cache_size | default('1GB') }}
+      maintenance_work_mem = {{ postgresql_maintenance_work_mem | default('64MB') }}
+      checkpoint_completion_target = {{ postgresql_checkpoint_completion_target | default('0.9') }}
+      wal_buffers = {{ postgresql_wal_buffers | default('16MB') }}
+      default_statistics_target = {{ postgresql_default_statistics_target | default('100') }}
+      random_page_cost = {{ postgresql_random_page_cost | default('1.1') }}
+      effective_io_concurrency = {{ postgresql_effective_io_concurrency | default('200') }}
+      work_mem = {{ postgresql_work_mem | default('4MB') }}
+      min_wal_size = {{ postgresql_min_wal_size | default('1GB') }}
+      max_wal_size = {{ postgresql_max_wal_size | default('4GB') }}
+      
+      # Logging
+      log_destination = 'stderr'
+      logging_collector = on
+      log_directory = 'log'
+      log_filename = 'postgresql-%Y-%m-%d_%H%M%S.log'
+      log_statement = '{{ postgresql_log_statement | default("none") }}'
+      log_min_duration_statement = {{ postgresql_log_min_duration | default('1000') }}
+      
+      # Connection settings
+      listen_addresses = '*'
+      port = 5432
+      
+    pg_hba.conf: |
+      # PostgreSQL Client Authentication Configuration File
+      local   all             all                                     trust
+      host    all             all             127.0.0.1/32            md5
+      host    all             all             ::1/128                 md5
+      host    all             all             0.0.0.0/0               md5

@@ -1,0 +1,77 @@
+- name: Deploy Nextcloud Recreate Deployment
+  kubernetes.core.k8s:
+    definition: "{{ nextcloud_recreate_deployment }}"
+    state: present
+    kubeconfig: "{{ rancher_kubeconfig }}"
+    wait: true
+    wait_condition:
+      type: Progressing
+      status: "True"
+      reason: NewReplicaSetAvailable
+    wait_timeout: 600
+
+- name: Wait for old pods to terminate (Recreate strategy)
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Pod
+    namespace: "{{ namespace }}"
+    label_selectors:
+      - "app={{ nextcloud_app_name }}"
+    kubeconfig: "{{ rancher_kubeconfig }}"
+  register: old_pods
+  until: old_pods.resources | selectattr('status.phase', 'equalto', 'Terminating') | list | length == 0
+  retries: 20
+  delay: 10
+
+- name: Wait for Nextcloud pods to be ready
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Pod
+    namespace: "{{ namespace }}"
+    label_selectors:
+      - "app={{ nextcloud_app_name }}"
+    kubeconfig: "{{ rancher_kubeconfig }}"
+  register: nextcloud_pods
+  until: nextcloud_pods.resources | selectattr('status.phase', 'equalto', 'Running') | list | length == replicas
+  retries: 30
+  delay: 10
+
+- name: Create Nextcloud Service
+  kubernetes.core.k8s:
+    definition: "{{ nextcloud_service }}"
+    state: present
+    kubeconfig: "{{ rancher_kubeconfig }}"
+    wait: true
+    wait_timeout: 300
+
+- name: Deploy Nextcloud Ingress
+  kubernetes.core.k8s:
+    definition: "{{ nextcloud_ingress }}"
+    state: present
+    kubeconfig: "{{ rancher_kubeconfig }}"
+    wait: true
+    wait_timeout: 300
+
+- name: Verify Recreate Deployment Status
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: Deployment
+    name: "{{ nextcloud_app_name }}"
+    namespace: "{{ namespace }}"
+    kubeconfig: "{{ rancher_kubeconfig }}"
+  register: deployment_status
+
+- name: Display Recreate Deployment Status
+  ansible.builtin.debug:
+    msg: |
+      Recreate Deployment Status:
+      - Name: {{ deployment_status.resources[0].metadata.name }}
+      - Replicas: {{ deployment_status.resources[0].spec.replicas }}
+      - Ready Replicas: {{ deployment_status.resources[0].status.readyReplicas | default(0) }}
+      - Available Replicas: {{ deployment_status.resources[0].status.availableReplicas | default(0) }}
+      - Strategy: {{ deployment_status.resources[0].spec.strategy.type }}
+      - Downtime: Expected during pod replacement
+
+- name: Recreate Deployment Complete
+  ansible.builtin.debug:
+    msg: "Nextcloud Recreate Deployment completed successfully!"
