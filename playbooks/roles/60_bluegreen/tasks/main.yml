@@ -1,0 +1,287 @@
+---
+# Nextcloud Blue/Green Deployment
+- name: Determine current nextcloud environment
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Service
+    name: "{{ nextcloud_service_name }}"
+    namespace: "{{ namespace }}"
+    kubeconfig: "{{ rancher_kubeconfig }}"
+  register: current_nextcloud_service
+  ignore_errors: true
+
+- name: Set current nextcloud environment
+  ansible.builtin.set_fact:
+    current_nextcloud_env: "{{ current_nextcloud_service.resources[0].spec.selector.env | default('blue') if current_nextcloud_service.resources else 'blue' }}"
+
+- name: Set target nextcloud environment
+  ansible.builtin.set_fact:
+    target_nextcloud_env: "{{ 'green' if current_nextcloud_env == 'blue' else 'blue' }}"
+
+- name: Create nextcloud deployment for target environment
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ rancher_kubeconfig }}"
+    definition: "{{ nextcloud_bluegreen_deployment }}"
+  register: nextcloud_deployment_result
+
+- name: Create nextcloud service for target environment
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ rancher_kubeconfig }}"
+    definition:
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: "{{ nextcloud_app_name }}-service-{{ target_nextcloud_env }}"
+        namespace: "{{ namespace }}"
+      spec:
+        selector:
+          app: "{{ nextcloud_app_name }}"
+          env: "{{ target_nextcloud_env }}"
+        ports:
+          - port: 80
+            targetPort: 80
+            name: http
+        type: ClusterIP
+
+# Health Checks and Traffic Switching
+- name: Wait for nextcloud deployment to be ready
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: Deployment
+    name: "{{ nextcloud_app_name }}-{{ target_nextcloud_env }}"
+    namespace: "{{ namespace }}"
+    kubeconfig: "{{ rancher_kubeconfig }}"
+    wait: true
+    wait_condition:
+      type: Available
+      status: "True"
+    wait_timeout: 600
+  register: nextcloud_deployment_status
+
+- name: Verify nextcloud pods are ready
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Pod
+    namespace: "{{ namespace }}"
+    kubeconfig: "{{ rancher_kubeconfig }}"
+    label_selectors:
+      - "app={{ nextcloud_app_name }}"
+      - "env={{ target_nextcloud_env }}"
+  register: nextcloud_pods
+
+- name: Check if deployment is healthy
+  ansible.builtin.fail:
+    msg: "Deployment health check failed. Nextcloud ready: {{ nextcloud_deployment_status.resources[0].status.readyReplicas | default(0) }}/{{ nextcloud_deployment_status.resources[0].status.replicas | default(0) }}"
+  when: (nextcloud_deployment_status.resources[0].status.readyReplicas | default(0)) == 0
+
+# Switch Traffic
+- name: Switch nextcloud traffic to new environment
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ rancher_kubeconfig }}"
+    definition:
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: "{{ nextcloud_service_name }}"
+        namespace: "{{ namespace }}"
+        labels:
+          app: "{{ nextcloud_app_name }}"
+      spec:
+        selector:
+          app: "{{ nextcloud_app_name }}"
+          env: "{{ target_nextcloud_env }}"
+        ports:
+          - port: 80
+            targetPort: 80
+            name: http
+        type: ClusterIP
+  when: (nextcloud_deployment_status.resources[0].status.readyReplicas | default(0)) > 0
+
+- name: Deploy Nextcloud Ingress
+  kubernetes.core.k8s:
+    definition: "{{ nextcloud_ingress }}"
+    state: present
+    kubeconfig: "{{ rancher_kubeconfig }}"
+    wait: true
+    wait_timeout: 300
+
+# Manual Smoke Testing and Rollback Decision
+- name: Display traffic switch completion
+  ansible.builtin.debug:
+    msg: |
+      TRAFFIC SWITCHED SUCCESSFULLY!
+      
+      Nextcloud service ({{ nextcloud_service_name }}) now points to: {{ target_nextcloud_env }}
+      
+      Please perform manual smoke testing on your application:
+      - Nextcloud: {{ nextcloud_protocol | default('https') }}://{{ nextcloud_host | default('cloud.waldhauser.sk') }}
+      
+      Test critical functionality:
+      - Login with admin credentials
+      - File upload/download
+      - Sharing functionality
+      - Web interface responsiveness
+
+- name: Manual smoke test confirmation
+  ansible.builtin.pause:
+    prompt: |
+      
+      MANUAL SMOKE TEST REQUIRED 
+      
+      The traffic has been switched to the new environment ({{ target_nextcloud_env }}).
+      Please test your Nextcloud application thoroughly.
+      
+      Is the service running properly? (Y/N)
+  register: smoke_test_result
+
+- name: Process smoke test result
+  ansible.builtin.set_fact:
+    smoke_test_passed: "{{ smoke_test_result.user_input | upper == 'Y' or smoke_test_result.user_input | upper == 'YES' }}"
+
+- name: Rollback traffic if smoke test failed
+  block:
+    - name: Display rollback notice
+      ansible.builtin.debug:
+        msg: |
+          SMOKE TEST FAILED - INITIATING ROLLBACK
+          
+          Rolling back traffic to previous environment ({{ current_nextcloud_env }})...
+
+    - name: Rollback nextcloud service to previous environment
+      kubernetes.core.k8s:
+        state: present
+        kubeconfig: "{{ rancher_kubeconfig }}"
+        definition:
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: "{{ nextcloud_service_name }}"
+            namespace: "{{ namespace }}"
+            labels:
+              app: "{{ nextcloud_app_name }}"
+          spec:
+            selector:
+              app: "{{ nextcloud_app_name }}"
+              env: "{{ current_nextcloud_env }}"
+            ports:
+              - port: 80
+                targetPort: 80
+                name: http
+            type: ClusterIP
+
+    - name: Confirm rollback completion
+      ansible.builtin.debug:
+        msg: |
+          ROLLBACK COMPLETED
+          
+          Traffic has been restored to the previous environment ({{ current_nextcloud_env }}).
+          The new deployment ({{ target_nextcloud_env }}) is still running but not receiving traffic.
+
+    - name: Ask about cleanup of failed deployment
+      ansible.builtin.pause:
+        prompt: |
+          
+          The rollback is complete. The failed deployment is still running in the background.
+          
+          Do you want to delete the failed deployment ({{ target_nextcloud_env }})? (Y/N)
+          
+          WARNING: This will permanently remove the new deployment!
+      register: cleanup_failed_deployment
+
+    - name: Delete failed deployments if requested
+      block:
+        - name: Delete failed nextcloud deployment
+          kubernetes.core.k8s:
+            state: absent
+            kubeconfig: "{{ rancher_kubeconfig }}"
+            definition:
+              apiVersion: apps/v1
+              kind: Deployment
+              metadata:
+                name: "{{ nextcloud_app_name }}-{{ target_nextcloud_env }}"
+                namespace: "{{ namespace }}"
+
+        - name: Delete failed nextcloud service
+          kubernetes.core.k8s:
+            state: absent
+            kubeconfig: "{{ rancher_kubeconfig }}"
+            definition:
+              apiVersion: v1
+              kind: Service
+              metadata:
+                name: "{{ nextcloud_app_name }}-service-{{ target_nextcloud_env }}"
+                namespace: "{{ namespace }}"
+
+        - name: Confirm cleanup completion
+          ansible.builtin.debug:
+            msg: |
+              CLEANUP COMPLETED
+              
+              Failed deployment ({{ target_nextcloud_env }}) has been completely removed.
+      when: cleanup_failed_deployment.user_input | upper == 'Y' or cleanup_failed_deployment.user_input | upper == 'YES'
+
+    - name: Fail deployment due to smoke test failure
+      ansible.builtin.fail:
+        msg: |
+          DEPLOYMENT FAILED: Smoke test failed and rollback completed.
+          {% if cleanup_failed_deployment.user_input | upper in ['Y', 'YES'] %}
+          Failed deployment has been cleaned up.
+          {% else %}
+          Failed deployment is still running but not receiving traffic. Clean up manually if needed.
+          {% endif %}
+
+  when: not smoke_test_passed
+
+# Cleanup old deployments (only if smoke test passed)
+- name: Clean up old nextcloud environment
+  kubernetes.core.k8s:
+    state: absent
+    kubeconfig: "{{ rancher_kubeconfig }}"
+    definition:
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: "{{ nextcloud_app_name }}-{{ current_nextcloud_env }}"
+        namespace: "{{ namespace }}"
+  when: 
+    - smoke_test_passed
+    - (nextcloud_deployment_status.resources[0].status.readyReplicas | default(0)) > 0 
+    - current_nextcloud_env != target_nextcloud_env
+
+- name: Clean up old nextcloud service
+  kubernetes.core.k8s:
+    state: absent
+    kubeconfig: "{{ rancher_kubeconfig }}"
+    definition:
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: "{{ nextcloud_app_name }}-service-{{ current_nextcloud_env }}"
+        namespace: "{{ namespace }}"
+  when: 
+    - smoke_test_passed
+    - (nextcloud_deployment_status.resources[0].status.readyReplicas | default(0)) > 0 
+    - current_nextcloud_env != target_nextcloud_env
+
+- name: Display deployment summary
+  ansible.builtin.debug:
+    msg: |
+      Blue/Green Deployment Summary:
+      Nextcloud: {{ current_nextcloud_env }} -> {{ target_nextcloud_env }}
+      Nextcloud Version: {{ nextcloud_version | default('latest') }}
+      Health Checks: {{ 'PASSED' if ((nextcloud_deployment_status.resources[0].status.readyReplicas | default(0)) > 0) else 'FAILED' }}
+      URL: {{ nextcloud_protocol | default('https') }}://{{ nextcloud_host | default('cloud.waldhauser.sk') }}
+      
+      {% if smoke_test_passed %}
+      DEPLOYMENT SUCCESSFUL - Old environment cleaned up
+      {% else %}
+      DEPLOYMENT FAILED - Rollback completed
+      {% endif %}
+
+- name: Blue-Green Deployment Complete
+  ansible.builtin.debug:
+    msg: "Nextcloud Blue-Green Deployment completed successfully!"
+  when: smoke_test_passed

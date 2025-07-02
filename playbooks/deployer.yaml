@@ -1,29 +1,63 @@
 ---
-- name: Check prerequisites
-  hosts: localhost
-  become: true
-  roles:
-    - role: 01_local_prerequisites
-      tags: always
+# !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+# Unneccessary since initialInstall should have been run before this
+# !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
-- name: Check server prerequisites
+# - name: Run common tasks for nextcloud
+#   hosts: "{{ TARGET_NODE }}"
+#   become: true
+#   vars:
+#     rancher_kubeconfig: "/etc/rancher/rke2/rke2.yaml"
+#   roles:
+#     - role: 04_common_nextcloud
+#       tags: [ common_nextcloud, always ]
+
+# ------------------------------------------------------------
+# DEPLOYMENT STRATEGIES
+# ------------------------------------------------------------
+
+- name: Deploy Nextcloud with Rolling Update Strategy
   hosts: "{{ TARGET_NODE }}"
   become: true
-  roles: 
-    - role: 02_server_prerequisites
-      tags: always
-
-- name: Check if kubeconfig exists
-  ansible.builtin.stat:
-    path: /etc/rancher/rke2/rke2.yaml
-  register: kubeconfig_check
-
-- name: Throw error if kubeconfig doesn't exist
-  ansible.builtin.fail:
-    msg: "Kubeconfig not found at /etc/rancher/rke2/rke2.yaml"
-  when: not kubeconfig_check.stat.exists
-
-- name: Set kubeconfig environment variable
-  ansible.builtin.set_fact:
+  vars:
     rancher_kubeconfig: "/etc/rancher/rke2/rke2.yaml"
+  roles:
+    - role: 10_rolling
+      tags: [ rolling, never ]
 
+- name: Deploy Nextcloud with Recreate Strategy
+  hosts: "{{ TARGET_NODE }}"
+  become: true
+  vars:
+    rancher_kubeconfig: "/etc/rancher/rke2/rke2.yaml"
+  roles:
+    - role: 20_recreate
+      tags: [ recreate, never ]
+
+- name: Deploy Nextcloud with Blue-Green Strategy
+  hosts: "{{ TARGET_NODE }}"
+  become: true
+  vars:
+    rancher_kubeconfig: "/etc/rancher/rke2/rke2.yaml"
+  roles:
+    - role: 60_bluegreen
+      tags: [ bluegreen, blue-green, never ]
+
+# Future deployment strategies
+# - name: Deploy Nextcloud with Canary Strategy
+#   hosts: "{{ TARGET_NODE }}"
+#   become: true
+#   vars:
+#     rancher_kubeconfig: "/etc/rancher/rke2/rke2.yaml"
+#   roles:
+#     - role: 30_canary
+#       tags: [ canary ]
+
+# - name: Deploy Nextcloud with A/B Testing Strategy
+#   hosts: "{{ TARGET_NODE }}"
+#   become: true
+#   vars:
+#     rancher_kubeconfig: "/etc/rancher/rke2/rke2.yaml"
+#   roles:
+#     - role: 40_ab_testing
+#       tags: [ ab, ab-testing ]
