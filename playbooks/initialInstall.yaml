@@ -40,6 +40,27 @@
     - role: 03_common
       tags: [ common ]
 
+# Deploy PostgreSQL Database First
+- name: Deploy PostgreSQL Database
+  hosts: "{{ TARGET_NODE }}"
+  become: true
+  vars:
+    rancher_kubeconfig: "/etc/rancher/rke2/rke2.yaml"
+  roles:
+    - role: 100_postgres
+      tags: [ postgres, database ]
+
+# Deploy Redis Cache Second
+- name: Deploy Redis Cache
+  hosts: "{{ TARGET_NODE }}"
+  become: true
+  vars:
+    rancher_kubeconfig: "/etc/rancher/rke2/rke2.yaml"
+  roles:
+    - role: 110_redis
+      tags: [ redis, cache ]
+
+# Deploy Nextcloud Common Components Third
 - name: Run common tasks for nextcloud 
   hosts: "{{ TARGET_NODE }}"
   become: true
@@ -49,6 +70,19 @@
     - role: 04_common_nextcloud
       tags: [ common_nextcloud, always ]
 
+- name: Create Nextcloud storage directory
+  hosts: "{{ TARGET_NODE }}"
+  become: true
+  tasks:
+    - name: Create nextcloud storage directory
+      ansible.builtin.file:
+        path: "{{ nextcloud_folder }}"
+        state: directory
+        owner: "33"  # www-data user ID
+        group: "33"  # www-data group ID
+        mode: '0755'
+
+# Deploy Nextcloud Application Last
 - name: InitialInstall Recreate Deployment of Nextcloud
   hosts: "{{ TARGET_NODE }}"
   become: true

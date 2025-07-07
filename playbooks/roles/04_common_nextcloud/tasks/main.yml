@@ -12,10 +12,28 @@
     state: present
     kubeconfig: "{{ rancher_kubeconfig }}"
 
+# - name: Apply Nextcloud ConfigMap
+#   kubernetes.core.k8s:
+#     definition: "{{ nextcloud_configmap }}"
+#     state: present
+#     kubeconfig: "{{ rancher_kubeconfig }}"
+
+# - name: Apply Nextcloud Redis session ConfigMap
+#   kubernetes.core.k8s:
+#     definition: "{{ redis_session_configmap }}"
+#     state: present
+#     kubeconfig: "{{ rancher_kubeconfig }}"
+
+- name: Apply Nextcloud Persistent Volume
+  kubernetes.core.k8s:
+    definition: "{{ nextcloud_data_pv }}"
+    state: present
+    kubeconfig: "{{ rancher_kubeconfig }}"
+    wait: true
+    wait_timeout: 300
+
 - name: Apply Nextcloud Persistent Volume Claim
   kubernetes.core.k8s:
     definition: "{{ nextcloud_data_pvc }}"
     state: present
     kubeconfig: "{{ rancher_kubeconfig }}"
-
-

@@ -1,0 +1,246 @@
+# ------------------------------------------------------------
+# REDIS SERVICE
+# ------------------------------------------------------------
+redis_service:
+  apiVersion: v1
+  kind: Service
+  metadata:
+    name: "redis-service"
+    namespace: "{{ namespace }}"
+    labels:
+      app: "redis"
+  spec:
+    selector:
+      app: "redis"
+    ports:
+      - port: 6379
+        targetPort: 6379
+        name: redis
+    type: ClusterIP
+
+# ------------------------------------------------------------
+# REDIS DEPLOYMENT
+# ------------------------------------------------------------
+redis_deployment:
+  apiVersion: apps/v1
+  kind: Deployment
+  metadata:
+    name: "redis"
+    namespace: "{{ namespace }}"
+    labels:
+      app: "redis"
+  spec:
+    replicas: 1
+    strategy:
+      type: Recreate  # Redis should not have multiple instances with same data
+    selector:
+      matchLabels:
+        app: "redis"
+    template:
+      metadata:
+        labels:
+          app: "redis"
+      spec:
+        containers:
+        - name: redis
+          image: "redis:7-alpine"
+          ports:
+          - containerPort: 6379
+            name: redis
+          env:
+          - name: REDIS_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: "{{ redis_secret_name | default('redis-secret') }}"
+                key: REDIS_PASSWORD
+                optional: true
+          command:
+          - redis-server
+          - /etc/redis/redis.conf
+          volumeMounts:
+          - name: redis-data
+            mountPath: /data
+          - name: redis-config
+            mountPath: /etc/redis
+          resources:
+            requests:
+              memory: "{{ redis_memory_request | default('128Mi') }}"
+              cpu: "{{ redis_cpu_request | default('100m') }}"
+            limits:
+              memory: "{{ redis_memory_limit | default('256Mi') }}"
+              cpu: "{{ redis_cpu_limit | default('200m') }}"
+          livenessProbe:
+            exec:
+              command:
+              - redis-cli
+              - -a
+              - $(REDIS_PASSWORD)
+              - ping
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            exec:
+              command:
+              - redis-cli
+              - -a
+              - $(REDIS_PASSWORD)
+              - ping
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 2
+        volumes:
+        - name: redis-data
+          persistentVolumeClaim:
+            claimName: "{{ redis_pvc_name | default('redis-data-pvc') }}"
+        - name: redis-config
+          configMap:
+            name: "{{ redis_config_name | default('redis-config') }}"
+            defaultMode: 0644
+
+# ------------------------------------------------------------
+# REDIS PERSISTENT VOLUME
+# ------------------------------------------------------------
+redis_data_pv:
+  apiVersion: v1
+  kind: PersistentVolume
+  metadata:
+    name: "redis-data-pv"
+    labels:
+      app: "redis"
+  spec:
+    capacity:
+      storage: "{{ redis_storage_size | default('2Gi') }}"
+    accessModes:
+      - ReadWriteOnce
+    persistentVolumeReclaimPolicy: Retain
+    storageClassName: "{{ storage_class | default('opt-storage') }}"
+    hostPath:
+      path: "{{ redis_data_folder | default('/opt/redis-data') }}"
+      type: DirectoryOrCreate
+
+# ------------------------------------------------------------
+# REDIS PERSISTENT VOLUME CLAIM
+# ------------------------------------------------------------
+redis_data_pvc:
+  apiVersion: v1
+  kind: PersistentVolumeClaim
+  metadata:
+    name: "{{ redis_pvc_name | default('redis-data-pvc') }}"
+    namespace: "{{ namespace }}"
+    labels:
+      app: "redis"
+  spec:
+    accessModes:
+      - ReadWriteOnce
+    resources:
+      requests:
+        storage: "{{ redis_storage_size | default('2Gi') }}"
+    storageClassName: "{{ storage_class | default('opt-storage') }}"
+
+# ------------------------------------------------------------
+# REDIS SECRET (Optional - for password authentication)
+# ------------------------------------------------------------
+redis_secret:
+  apiVersion: v1
+  kind: Secret
+  metadata:
+    name: "{{ redis_secret_name | default('redis-secret') }}"
+    namespace: "{{ namespace }}"
+    labels:
+      app: "redis"
+  type: Opaque
+  data:
+    REDIS_PASSWORD: "{{ redis_password | default('redis_secure_password') | b64encode }}"
+
+# ------------------------------------------------------------
+# REDIS CONFIGURATION
+# ------------------------------------------------------------
+redis_configmap:
+  apiVersion: v1
+  kind: ConfigMap
+  metadata:
+    name: "{{ redis_config_name | default('redis-config') }}"
+    namespace: "{{ namespace }}"
+    labels:
+      app: "redis"
+  data:
+    redis.conf: |-
+      # Redis configuration optimized for Nextcloud
+      
+      # Network
+      bind 0.0.0.0
+      port 6379
+      tcp-keepalive 300
+      
+      # Memory management
+      maxmemory {{ redis_max_memory | default('128mb') }}
+      maxmemory-policy allkeys-lru
+      
+      # Persistence for session data
+      save 900 1
+      save 300 10
+      save 60 10000
+      
+      # Logging
+      loglevel notice
+      logfile ""
+      
+      # Security - Enable password authentication
+      {% if redis_password and redis_password != "" %}
+      requirepass {{ redis_password }}
+      {% endif %}
+      
+      # Performance tuning for Nextcloud
+      timeout 300
+      tcp-keepalive 300
+      
+      # Disable dangerous commands
+      rename-command FLUSHDB ""
+      rename-command FLUSHALL ""
+      rename-command DEBUG ""
+      rename-command CONFIG ""
+      
+      # Enable keyspace notifications for session management
+      notify-keyspace-events Ex
+      
+      # Optimize for session storage
+      hash-max-ziplist-entries 512
+      hash-max-ziplist-value 64
+      
+      # Database settings
+      databases 16
+      
+      # Append only file for better durability
+      appendonly yes
+      appendfsync everysec
+      auto-aof-rewrite-percentage 100
+      auto-aof-rewrite-min-size 64mb
+
+# ------------------------------------------------------------
+# REDIS NETWORK POLICY (security)
+# ------------------------------------------------------------
+redis_network_policy:
+  apiVersion: networking.k8s.io/v1
+  kind: NetworkPolicy
+  metadata:
+    name: "redis-network-policy"
+    namespace: "{{ namespace }}"
+    labels:
+      app: "redis"
+  spec:
+    podSelector:
+      matchLabels:
+        app: "redis"
+    policyTypes:
+    - Ingress
+    ingress:
+    - from:
+      - podSelector:
+          matchLabels:
+            app: "{{ nextcloud_app_name | default('nextcloud') }}"
+      ports:
+      - protocol: TCP
+        port: 6379

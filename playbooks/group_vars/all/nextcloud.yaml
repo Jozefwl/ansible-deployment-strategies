@@ -45,6 +45,30 @@ nextcloud_bluegreen_deployment:
                 name: "{{ nextcloud_secret_name | default('nextcloud-secret') }}"
                 key: NEXTCLOUD_ADMIN_PASSWORD
           
+          # PostgreSQL Database Configuration
+          - name: POSTGRES_DB
+            valueFrom:
+              secretKeyRef:
+                name: "{{ postgresql_secret_name | default('postgresql-secret') }}"
+                key: POSTGRES_DB
+          - name: POSTGRES_USER
+            valueFrom:
+              secretKeyRef:
+                name: "{{ postgresql_secret_name | default('postgresql-secret') }}"
+                key: POSTGRES_USER
+          - name: POSTGRES_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: "{{ postgresql_secret_name | default('postgresql-secret') }}"
+                key: POSTGRES_PASSWORD
+          - name: POSTGRES_HOST
+            valueFrom:
+              secretKeyRef:
+                name: "{{ postgresql_secret_name | default('postgresql-secret') }}"
+                key: POSTGRES_HOST
+          - name: POSTGRES_PORT
+            value: "5432"
+          
           # Nextcloud specific settings
           - name: NEXTCLOUD_TRUSTED_DOMAINS
             value: "{{ nextcloud_trusted_domains | default('localhost') }}"
@@ -61,28 +85,45 @@ nextcloud_bluegreen_deployment:
           - name: PHP_UPLOAD_LIMIT
             value: "{{ nextcloud_php_upload_limit | default('10G') }}"
           
-          # SQLite database (default for Nextcloud)
-          - name: SQLITE_DATABASE
-            value: "nextcloud"
+          # Redis Configuration
+          - name: REDIS_HOST
+            value: "redis-service"
+          - name: REDIS_PORT
+            value: "6379"
+          - name: REDIS_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: "{{ redis_secret_name | default('redis-secret') }}"
+                key: REDIS_PASSWORD
           
           volumeMounts:
           - name: nextcloud-data
             mountPath: /var/www/html
+          # - name: nextcloud-config
+          #   mountPath: /var/www/html/config/redis.config.php
+          #   subPath: redis.config.php
+          # - name: php-redis-session
+          #   mountPath: /usr/local/etc/php/conf.d/redis-session.ini
+          #   subPath: redis-session.ini
+
             
           readinessProbe:
             httpGet:
               path: /status.php
               port: 80
-            initialDelaySeconds: 60
+            initialDelaySeconds: 120
             periodSeconds: 10
-            timeoutSeconds: 5
+            timeoutSeconds: 30
+            failureThreshold: 6
+            successThreshold: 1
           livenessProbe:
             httpGet:
               path: /status.php
               port: 80
-            initialDelaySeconds: 120
+            initialDelaySeconds: 240
             periodSeconds: 30
-            timeoutSeconds: 5
+            timeoutSeconds: 30
+            failureThreshold: 3
             
           resources:
             requests:
@@ -96,6 +137,13 @@ nextcloud_bluegreen_deployment:
         - name: nextcloud-data
           persistentVolumeClaim:
             claimName: "{{ nextcloud_pvc_name | default('nextcloud-data-pvc') }}"
+        # - name: nextcloud-config
+        #   configMap:
+        #     name: "{{ nextcloud_config_name | default('nextcloud-config') }}"
+        # - name: php-redis-session
+        #   configMap:
+        #     name: nextcloud-php-redis-session
+
 
 # ------------------------------------------------------------
 # ROLLING DEPLOYMENT STRATEGY
@@ -143,6 +191,30 @@ nextcloud_rolling_deployment:
                 name: "{{ nextcloud_secret_name | default('nextcloud-secret') }}"
                 key: NEXTCLOUD_ADMIN_PASSWORD
 
+          # PostgreSQL Database Configuration
+          - name: POSTGRES_DB
+            valueFrom:
+              secretKeyRef:
+                name: "{{ postgresql_secret_name | default('postgresql-secret') }}"
+                key: POSTGRES_DB
+          - name: POSTGRES_USER
+            valueFrom:
+              secretKeyRef:
+                name: "{{ postgresql_secret_name | default('postgresql-secret') }}"
+                key: POSTGRES_USER
+          - name: POSTGRES_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: "{{ postgresql_secret_name | default('postgresql-secret') }}"
+                key: POSTGRES_PASSWORD
+          - name: POSTGRES_HOST
+            valueFrom:
+              secretKeyRef:
+                name: "{{ postgresql_secret_name | default('postgresql-secret') }}"
+                key: POSTGRES_HOST
+          - name: POSTGRES_PORT
+            value: "5432"
+
           # Nextcloud specific settings
           - name: NEXTCLOUD_TRUSTED_DOMAINS
             value: "{{ nextcloud_trusted_domains | default('localhost') }}"
@@ -159,28 +231,45 @@ nextcloud_rolling_deployment:
           - name: PHP_UPLOAD_LIMIT
             value: "{{ nextcloud_php_upload_limit | default('10G') }}"
 
-          # SQLite database (default for Nextcloud)
-          - name: SQLITE_DATABASE
-            value: "nextcloud"
+          # Redis Configuration
+          - name: REDIS_HOST
+            value: "redis-service"
+          - name: REDIS_PORT
+            value: "6379"
+          - name: REDIS_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: "{{ redis_secret_name | default('redis-secret') }}"
+                key: REDIS_PASSWORD
+
 
           volumeMounts:
           - name: nextcloud-data
             mountPath: /var/www/html
+          # - name: nextcloud-config
+          #   mountPath: /var/www/html/config/redis.config.php
+          #   subPath: redis.config.php
+          # - name: php-redis-session
+          #   mountPath: /usr/local/etc/php/conf.d/redis-session.ini
+          #   subPath: redis-session.ini
 
           readinessProbe:
             httpGet:
               path: /status.php
               port: 80
-            initialDelaySeconds: 60
+            initialDelaySeconds: 120
             periodSeconds: 10
-            timeoutSeconds: 5
+            timeoutSeconds: 30
+            failureThreshold: 6
+            successThreshold: 1
           livenessProbe:
             httpGet:
               path: /status.php
               port: 80
-            initialDelaySeconds: 120
+            initialDelaySeconds: 240
             periodSeconds: 30
-            timeoutSeconds: 5
+            timeoutSeconds: 30
+            failureThreshold: 3
 
           resources:
             requests:
@@ -194,6 +283,12 @@ nextcloud_rolling_deployment:
         - name: nextcloud-data
           persistentVolumeClaim:
             claimName: "{{ nextcloud_pvc_name | default('nextcloud-data-pvc') }}"
+        # - name: nextcloud-config
+        #   configMap:
+        #     name: "{{ nextcloud_config_name | default('nextcloud-config') }}"
+        # - name: php-redis-session
+        #   configMap:
+        #     name: nextcloud-php-redis-session
 
 # ------------------------------------------------------------
 # RECREATE DEPLOYMENT STRATEGY
@@ -238,6 +333,30 @@ nextcloud_recreate_deployment:
                 name: "{{ nextcloud_secret_name | default('nextcloud-secret') }}"
                 key: NEXTCLOUD_ADMIN_PASSWORD
 
+          # PostgreSQL Database Configuration
+          - name: POSTGRES_DB
+            valueFrom:
+              secretKeyRef:
+                name: "{{ postgresql_secret_name | default('postgresql-secret') }}"
+                key: POSTGRES_DB
+          - name: POSTGRES_USER
+            valueFrom:
+              secretKeyRef:
+                name: "{{ postgresql_secret_name | default('postgresql-secret') }}"
+                key: POSTGRES_USER
+          - name: POSTGRES_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: "{{ postgresql_secret_name | default('postgresql-secret') }}"
+                key: POSTGRES_PASSWORD
+          - name: POSTGRES_HOST
+            valueFrom:
+              secretKeyRef:
+                name: "{{ postgresql_secret_name | default('postgresql-secret') }}"
+                key: POSTGRES_HOST
+          - name: POSTGRES_PORT
+            value: "5432"
+
           # Nextcloud specific settings
           - name: NEXTCLOUD_TRUSTED_DOMAINS
             value: "{{ nextcloud_trusted_domains | default('localhost') }}"
@@ -254,28 +373,44 @@ nextcloud_recreate_deployment:
           - name: PHP_UPLOAD_LIMIT
             value: "{{ nextcloud_php_upload_limit | default('10G') }}"
 
-          # SQLite database (default for Nextcloud)
-          - name: SQLITE_DATABASE
-            value: "nextcloud"
+          # Redis Configuration
+          - name: REDIS_HOST
+            value: "redis-service"
+          - name: REDIS_PORT
+            value: "6379"
+          - name: REDIS_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: "{{ redis_secret_name | default('redis-secret') }}"
+                key: REDIS_PASSWORD
 
           volumeMounts:
           - name: nextcloud-data
             mountPath: /var/www/html
+          # - name: nextcloud-config
+          #   mountPath: /var/www/html/config/redis.config.php
+          #   subPath: redis.config.php
+          # - name: php-redis-session
+          #   mountPath: /usr/local/etc/php/conf.d/redis-session.ini
+          #   subPath: redis-session.ini
 
-          readinessProbe:
-            httpGet:
-              path: /status.php
-              port: 80
-            initialDelaySeconds: 60
-            periodSeconds: 10
-            timeoutSeconds: 5
-          livenessProbe:
-            httpGet:
-              path: /status.php
-              port: 80
-            initialDelaySeconds: 120
-            periodSeconds: 30
-            timeoutSeconds: 5
+          # readinessProbe:
+          #   httpGet:
+          #     path: /status.php
+          #     port: 80
+          #   initialDelaySeconds: 120
+          #   periodSeconds: 10
+          #   timeoutSeconds: 30
+          #   failureThreshold: 6
+          #   successThreshold: 1
+          # livenessProbe:
+          #   httpGet:
+          #     path: /status.php
+          #     port: 80
+          #   initialDelaySeconds: 240
+          #   periodSeconds: 30
+          #   timeoutSeconds: 30
+          #   failureThreshold: 3
 
           resources:
             requests:
@@ -289,7 +424,34 @@ nextcloud_recreate_deployment:
         - name: nextcloud-data
           persistentVolumeClaim:
             claimName: "{{ nextcloud_pvc_name | default('nextcloud-data-pvc') }}"
+        # - name: nextcloud-config
+        #   configMap:
+        #     name: "{{ nextcloud_config_name | default('nextcloud-config') }}"
+        # - name: php-redis-session
+        #   configMap:
+        #     name: nextcloud-php-redis-session
 
+# ------------------------------------------------------------
+# PERSISTENT VOLUME
+# ------------------------------------------------------------
+
+nextcloud_data_pv:
+  apiVersion: v1
+  kind: PersistentVolume
+  metadata:
+    name: "nextcloud-data-pv"
+    labels:
+      app: "{{ nextcloud_app_name }}"
+  spec:
+    capacity:
+      storage: "{{ nextcloud_storage_size | default('50Gi') }}"
+    accessModes:
+      - ReadWriteOnce
+    persistentVolumeReclaimPolicy: Retain
+    storageClassName: "{{ storage_class | default('opt-storage') }}"
+    hostPath:
+      path: "{{ nextcloud_folder | default('/opt/nextcloud-storage') }}"
+      type: DirectoryOrCreate
 
 # ------------------------------------------------------------
 # PERSISTENT VOLUME CLAIM
@@ -308,7 +470,6 @@ nextcloud_data_pvc:
       requests:
         storage: "{{ nextcloud_storage_size | default('10Gi') }}"
     storageClassName: "{{ storage_class }}"
-
 
 # ------------------------------------------------------------
 # SECRET
@@ -374,3 +535,4 @@ nextcloud_ingress:
               name: "{{ nextcloud_service_name | default(nextcloud_app_name + '-service') }}"
               port: 
                 number: 80
+

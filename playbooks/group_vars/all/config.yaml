@@ -29,6 +29,7 @@ nextcloud_secret_name: "nextcloud-secret"
 nextcloud_service_name: "nextcloud-service"
 nextcloud_pvc_name: "nextcloud-data-pvc"
 nextcloud_ingress_name: "nextcloud-ingress"
+nextcloud_config_name: "nextcloud-config"
 nextcloud_trusted_domains: "cloud.waldhauser.sk localhost"
 nextcloud_url: "https://cloud.waldhauser.sk"
 nextcloud_protocol: "https"
@@ -39,8 +40,8 @@ nextcloud_admin_user: "admin"
 nextcloud_admin_password: "your_secure_admin_password"
 
 # resources
-nextcloud_cpu_request: "128m"
-nextcloud_memory_request: "256Mi"
+nextcloud_cpu_request: "256m"
+nextcloud_memory_request: "512Mi"
 nextcloud_cpu_limit: "512m"
 nextcloud_memory_limit: "1Gi"
 
@@ -49,7 +50,7 @@ nextcloud_php_memory_limit: "512M"
 nextcloud_php_upload_limit: "10G"
 
 # storage
-nextcloud_storage_size: "50Gi"
+nextcloud_storage_size: "50Gi" # NEXTCLOUD FILE STORAGE SIZE
 nextcloud_folder: "/opt/nextcloud-storage"
 
 # Ingress configuration
@@ -71,7 +72,24 @@ ssl_redirect: "false"
 proxy_body_size: "10G"
 # --------------------------------------------------------------
 
+# --------------------------------------------------------------
+# Redis Configuration (for Nextcloud session management)
+# --------------------------------------------------------------
+redis_app_name: "redis"
+redis_secret_name: "redis-secret"
+redis_config_name: "redis-config"
+redis_pvc_name: "redis-data-pvc"
+redis_data_folder: "/opt/redis-data"
+redis_storage_size: "2Gi"
+redis_password: "redisPasswort12354"
 
+# Redis Resource Limits
+redis_memory_request: "128Mi"
+redis_cpu_request: "100m"
+redis_memory_limit: "256Mi"
+redis_cpu_limit: "200m"
+redis_max_memory: "200mb"
+# --------------------------------------------------------------
 
 # --------------------------------------------------------------
 # postgre config
@@ -86,7 +104,7 @@ postgresql_configmap_name: "postgresql-config"
 postgresql_ingress_policy_name: "postgresql-ingress-policy"
 
 # Storage Configuration
-postgresql_storage_size: "100Gi"
+postgresql_storage_size: "15Gi" # NEXTCLOUD USER AUTH, PERMS, CONTACTS, INDEXES... STORAGE SIZE
 postgresql_data_folder: "/data/postgresql"
 pv_reclaim_policy: "Retain"
 
@@ -100,6 +118,8 @@ postgresql_connection:
   host: "postgresql-service"
   port: 5432
   database: "nextcloud"
-  username: "postgres"
-  password: "adminpassword"
+  username: "nextcloud_user"      
+  password: "nextcloud_password"  
+  postgres_user: "postgres"       # Admin user for postgre
+  postgres_password: "adminpassword"  # Admin password for postgre
 # --------------------------------------------------------------

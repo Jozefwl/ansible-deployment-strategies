@@ -144,8 +144,12 @@ postgresql_secret:
   type: Opaque
   data:
     POSTGRES_DB: "{{ postgresql_connection.database | b64encode }}"
-    POSTGRES_USER: "{{ postgresql_connection.username | b64encode }}"
-    POSTGRES_PASSWORD: "{{ postgresql_connection.password | b64encode }}"
+    POSTGRES_USER: "{{ postgresql_connection.username | b64encode }}"  # nextcloud_user
+    POSTGRES_PASSWORD: "{{ postgresql_connection.password | b64encode }}"  # nextcloud_password
+    POSTGRES_HOST: "{{ postgresql_connection.host | b64encode }}"
+    # Admin credentials for initialization
+    POSTGRES_ADMIN_USER: "{{ postgresql_connection.postgres_user | b64encode }}"
+    POSTGRES_ADMIN_PASSWORD: "{{ postgresql_connection.postgres_password | b64encode }}"
 
 # ------------------------------------------------------------
 # CLUSTERIP SERVICE

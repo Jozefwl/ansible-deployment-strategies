@@ -1,0 +1,62 @@
+- name: Apply namespace
+  kubernetes.core.k8s:
+    name: "{{ namespace }}"
+    api_version: v1
+    kind: Namespace
+    state: present
+    kubeconfig: "{{ rancher_kubeconfig }}"
+
+- name: Apply Redis Secret
+  kubernetes.core.k8s:
+    definition: "{{ redis_secret }}"
+    state: present
+    kubeconfig: "{{ rancher_kubeconfig }}"
+    force: true
+
+- name: Apply Redis ConfigMap
+  kubernetes.core.k8s:
+    definition: "{{ redis_configmap }}"
+    state: present
+    kubeconfig: "{{ rancher_kubeconfig }}"
+    force: true
+
+- name: Apply Redis Persistent Volume
+  kubernetes.core.k8s:
+    definition: "{{ redis_data_pv }}"
+    state: present
+    kubeconfig: "{{ rancher_kubeconfig }}"
+    wait: true
+    wait_timeout: 300
+
+- name: Apply Redis Persistent Volume Claim
+  kubernetes.core.k8s:
+    definition: "{{ redis_data_pvc }}"
+    state: present
+    kubeconfig: "{{ rancher_kubeconfig }}"
+
+- name: Apply Redis Deployment
+  kubernetes.core.k8s:
+    definition: "{{ redis_deployment }}"
+    state: present
+    kubeconfig: "{{ rancher_kubeconfig }}"
+    wait: true
+    wait_condition:
+      type: Progressing
+      status: "True"
+      reason: NewReplicaSetAvailable
+    wait_timeout: 600
+    force: true
+
+- name: Apply Redis Service
+  kubernetes.core.k8s:
+    definition: "{{ redis_service }}"
+    state: present
+    kubeconfig: "{{ rancher_kubeconfig }}"
+    force: true
+
+- name: Apply Redis Network Policy
+  kubernetes.core.k8s:
+    definition: "{{ redis_network_policy }}"
+    state: present
+    kubeconfig: "{{ rancher_kubeconfig }}"
+    force: true
